@@ -1,2 +1,5 @@
 *.out
 v_gwas
+*.pickle
+__pycache__
+.DS_Store

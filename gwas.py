@@ -1,138 +1,114 @@
 # Eli Pandolfo
+# simulates a GWAS on microbial data
 
-import numpy as np
-import random
 import pickle
+from collections import OrderedDict
 
-K = 30
-NUM_SAMPLES = 300
-GENOME_SIZE = 3000000
-WILD_GENES = 10
+class Analyzer:
 
-RESISTANT_SNP_LOCS = [random.randrange(GENOME_SIZE) for loc in range(int(GENOME_SIZE / 100))]
+    def __init__(self, threads, k, num_samples, gene_pool_file):
+        self.THREADS = threads
+        self.K = k
+        self.NUM_SAMPLES = num_samples
+        self.gene_pool_file = gene_pool_file
 
-def simulate_genes(size):
-    gene_size = size / 1000
-    genes = []
-    for i in range(WILD_GENES): # 10 genes exist in gene pool that mutants can acquire
-        gene = ''
-        for j in range(random.randint(int(.7 * gene_size), int(1.3 * gene_size))):
-            gene += random.choice('ACTG')
-        genes.append(gene)
-    return genes
+    # for reusability
+    def load(self, filename):
+        with open(filename, 'rb') as f:
+            raw = pickle.load(f)
+        return raw
 
-def simulate_genome(size):
-    s = ''
-    for i in range(size):
-        s += random.choice('ACTG')
-    return s
+    # load the gene pool file
+    def load_pool(self):
+        print('Initializing gene pool...')
+        return self.load(self.gene_pool_file)
 
-def simulate_variant(wild_type, size, genes):
-    mutant = ''
-    num_snps = 0
-    num_beneficial_snps = 0
-    num_genes = 0
-    num_beneficial_genes = 0
-    resistance = 0
+    # there will be a bunch of kmers frame shifted 1 base from each other, all centered around
+    # a single gene or SNP. This coalesces those kmers into a single sequence containing a gene or SNP.
+    # Note: this only works if `for key in dict` returns the keys in the order in which they were added.
+    def remove_duplicates(self, kmers):
+        new_resistant_kmers = {}
+        temp = {}
+        i = 0
 
-    for i,base in enumerate(wild_type):
-        mut_chance = random.randint(0, size * 2)
-        if mut_chance / (size * 2) > .9999: # .0001 chance of gene addition
-            num_genes += 1
-            gene_added = random.randint(0, WILD_GENES - 1)
-            if gene_added <= WILD_GENES / 5:
-                resistance = 1
-                num_beneficial_genes += 1
-            mutant += genes[gene_added]    
-        elif mut_chance / (size * 2) > .99: # 1 percent chance of snp
-            num_snps += 1
-            mutation_options = 'ACTG'.replace(base, '')
-            mutation_choice = random.choice(mutation_options)
-            mutant += mutation_choice
-            if mutation_choice == 'A' and i in RESISTANT_SNP_LOCS:
-                resistance = 1
-                num_beneficial_snps += 1
-        else:
-            mutant += base
+        prev_kmer = 'initial'
 
-    return (mutant, resistance, num_snps, num_beneficial_snps, num_genes, num_beneficial_genes)
+        for kmer in kmers: # assumes sorted
+            if prev_kmer[1:] != kmer[:-1]: # if this is a totally new kmer
+                i += 1
+                temp[i] = (kmer, kmers[kmer])
+            else: # if this is a previous kmer frame shifted 1
+                temp[i] = (temp[i][0] + kmer[-1], temp[i][1])
+            prev_kmer = kmer
 
-def simulate_gene_pool(num, size):
-    wild_type = simulate_genome(size)
-    genes = simulate_genes(size)
-    return [simulate_variant(wild_type, size, genes) for i in range(num)]
+        for k in temp:
+            new_resistant_kmers[temp[k][0]] = temp[k][1]
 
-def sample_variants(variants, n):
-    # compare mutants to wild-type
-    sample = random.sample(variants, n)
-    for genome in sample:
-        print('SNPs: ', genome[2], 'Beneficial SNPS:', genome[3],
-            'Genes added:', genome[4], 'Beneficial genes added:', genome[5])
+        return new_resistant_kmers
 
-def remove_duplicates(kmers):
-    new_resistant_kmers = {}
-    temp = {}
-    i = 0
 
-    prev_kmer = 'initial'
+    # 1. Creates a dict of all kmers in the gene pool, associated with the genomes that
+    #    have that kmer
+    # 2. Identifies kmers associated with antibiotic resistance by correlating the
+    #    known resistance of a genome to that genome having a particular kmer
+    # 3. Coalesces adjacent kmers into a longer sequence of nucleotides containing
+    #    a SNP or gene
+    # 4. Returns a dictionary with kmer strings as keys and lists of genome ids as values
+    def find_seqs(self, variants, filename=''):
+        kmers = OrderedDict()
+        resistant_kmers = {}
 
-    for kmer in kmers: # assumes sorted
-        if prev_kmer[1:] != kmer[:-1]: # if this is a totally new kmer
-            i += 1
-            temp[i] = (kmer, kmers[kmer])
-        else: # if this is a previous kmer frame shifted 1
-            temp[i] = (temp[i][0] + kmer[-1], temp[i][1])
-        prev_kmer = kmer
+        print('\nCreating kmer database...')
+        for v_id, variant in variants.items():
+            for i in range(len(variant.sequence) - self.K + 1):
+                kmer = variant.sequence[i:i + self.K]
+                if kmer in kmers:
+                    kmers[kmer].append(v_id)
+                else:
+                    kmers[kmer] = [v_id]
 
-    for k in temp:
-        new_resistant_kmers[temp[k][0]] = temp[k][1]
+        # consider parallelizing this
+        print('\nIdentifying resistant kmers...')
+        for kmer in kmers:
+            num_resistant = 0
+            for v_id in kmers[kmer]:
+                if variants[v_id].resistance == 1:
+                    num_resistant += 1
+            p_resistant = num_resistant / len(kmers[kmer])
+            if p_resistant > 0.95 and num_resistant / self.NUM_SAMPLES >= .01:
+                resistant_kmers[kmer] = kmers[kmer]
+        
+        print('\nConsolidating adjacent kmers...')
+        resistant_kmers = self.remove_duplicates(resistant_kmers)
 
-    return new_resistant_kmers
+        print(f'\n{len(resistant_kmers)} resistant sequences detected')
+        if filename:
+            print(f'\nDumping sequences to {filename}...')
+            with open(filename, 'wb') as dump_file:
+                pickle.dump(resistant_kmers, dump_file)
+        return resistant_kmers
 
-def create_gene_pool():
-    raw = simulate_gene_pool(NUM_SAMPLES, GENOME_SIZE)
+    def evaluate_accuracy(self, seqs, raw):
+        variants = raw['variants']
+        meta = raw['meta']
+        gene_size = meta['GENOME_SIZE'] / 1000
 
-    with open('gene_pool', 'wb') as gene_pool_file:
-        pickle.dump(raw, gene_pool_file)
+        identified_genes = {gene: seqs[gene] for gene in seqs if len(gene) > 0.5 * gene_size}
+        beneficial_gene = meta['genes'][0] # hacky but i dont want to make new data rn
+        # print('\nBeneficial gene:\n', beneficial_gene)
 
-def identify_resistant_kmers():
-    print('Initializing gene pool...')
-    with open('gene_pool', 'rb') as gene_pool_file:
-        raw = pickle.load(gene_pool_file)
-
-    print('\nSampling variants...')
-    sample_variants(raw, 10)
-    
-    kmers = {}
-    resistant_kmers = {}
-
-    print('\nCreating kmer database...')
-    for index, genome in enumerate(raw):
-        for i in range(len(genome[0]) - K + 1):
-            kmer = genome[0][i:i+K]
-            if kmer in kmers:
-                kmers[kmer].append(index)
+        # print('\nIdentified genes:\n')
+        for gene in identified_genes:
+            if len(gene) > len(beneficial_gene):
+                if beneficial_gene in gene:
+                    print('Beneficial gene recognized!')
             else:
-                kmers[kmer] = [index]
+                if gene in beneficial_gene:
+                    print('Beneficial gene recognized!')
 
-    print('\nIdentifying resistant kmers...')
-    for kmer in kmers:
-        num_resistant = 0
-        for genome in kmers[kmer]:
-            if raw[genome][1] == 1:
-                num_resistant += 1
-        p_resistant = num_resistant / len(kmers[kmer])
-        if p_resistant > 0.95 and num_resistant / NUM_SAMPLES >= .01:
-            resistant_kmers[kmer] = kmers[kmer]
-            # print(kmer, kmers[kmer], len(kmers[kmer]), p_resistant)
-    
-    print('\nRemoving duplicates...')
-    resistant_kmers = remove_duplicates(resistant_kmers)
-
-    print('\nResistant kmers:', len(resistant_kmers))
-    for kmer in resistant_kmers:
-        print(kmer, resistant_kmers[kmer])
+        
 
 
-create_gene_pool()
-#identify_resistant_kmers()
+        
+
+
