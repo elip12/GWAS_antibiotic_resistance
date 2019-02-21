@@ -27,3 +27,13 @@ instantiate_pool(PICKLE_FILE)
 this part. It will take 30 to 90 minutes depending on how shitty your computer is. If you only have
 2 cores, I reccommend changing THREADS to 2 (even if you have Intel hyperthreading or equivalent).
 
+If you have a pickle file and want to run the GWAS, switch the commented out stuff above. That
+should take 10 to 30 minutes.
+
+You can also tweak anything. Making the simulated data ~30000 bp long will make the simulation and GWAS take close to instant speed.
+
+
+## Developing
+
+Please do not push to master. Make a new branch and push to it.
+
