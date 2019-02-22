@@ -9,6 +9,7 @@ PICKLE_SIM = 'sim.pickle'
 PERCENT_RESISTANT = .2
 
 def load_raw():
+    print('Loading raw data...')
     with open(PICKLE_RAW, 'rb') as f:
         raw = pickle.load(f)
     return raw
@@ -19,27 +20,30 @@ def identify_variant_location(raw):
     # return the relative location in all genomes (returns a list or tuple since location is different
     # in every genome)
 
-    K = 500
+    K = 750
     kmers = {}
     count = 0
-    print('starting...')
+    print('Creating kmer database...')
     for raw_id, seq in raw.items():
         if count > 20:
             break
         count += 1
-        for contig in seq:
+        for c_id, contig in enumerate(seq):
             if len(contig) < K:
                 break
             for i in range(len(contig) - K + 1):
                 kmer = contig[i:i + K]
                 if kmer in kmers:
-                    kmers[kmer].append(raw_id)
+                    kmers[kmer].append((raw_id, c_id, i))
                 else:
-                    kmers[kmer] = [raw_id]
-    print('next step...')
-    for kmer in kmers:
-        if len(kmers[kmer]) == count:
-            print('kmer identified')
+                    kmers[kmer] = [(raw_id, c_id, i)]
+    
+    print('Identifying usable kmers...')
+    num = 0
+    for kmer, ids in kmers.items():
+        if len(ids) == count:
+            num += 1
+    print('Usable kmers identified:', num)
 
     return (1,1)
 
