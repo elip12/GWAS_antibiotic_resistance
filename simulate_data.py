@@ -20,30 +20,32 @@ def identify_variant_location(raw):
     # return the relative location in all genomes (returns a list or tuple since location is different
     # in every genome)
 
-    K = 750
+    K = 500
     kmers = {}
-    count = 0
     print('Creating kmer database...')
-    for raw_id, seq in raw.items():
-        if count > 20:
-            break
-        count += 1
+    for count, (raw_id, seq) in enumerate(raw.items()):
+        
+        # if count > 11:
+        #     break
+        
         for c_id, contig in enumerate(seq):
-            if len(contig) < K:
-                break
-            for i in range(len(contig) - K + 1):
-                kmer = contig[i:i + K]
-                if kmer in kmers:
-                    kmers[kmer].append((raw_id, c_id, i))
-                else:
-                    kmers[kmer] = [(raw_id, c_id, i)]
+            l = len(contig)
+            if l >= K:
+                for i in range(l - K + 1):
+                    kmer = contig[i:i + K]
+                    if kmer in kmers:
+                        kmers[kmer].append((raw_id, c_id, i))
+                    elif count == 0:
+                        kmers[kmer] = [(raw_id, c_id, i)]
+        if (count < 10 and count > 0) or count % 15 == 1:
+            kmers = {kmer:ids for kmer, ids in kmers.items() if len(ids) >= count + 1}
+        print(len(kmers))
+        if len(kmers) == 0:
+            break
     
+    kmers = {kmer:ids for kmer, ids in kmers.items() if len(ids) >= count + 1}
     print('Identifying usable kmers...')
-    num = 0
-    for kmer, ids in kmers.items():
-        if len(ids) == count:
-            num += 1
-    print('Usable kmers identified:', num)
+    print('Usable kmers identified:', len(kmers))
 
     return (1,1)
 
