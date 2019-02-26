@@ -7,6 +7,7 @@ import argparse
 
 PICKLE_RAW = 'raw.pickle'
 PICKLE_SIM = 'sim.pickle'
+PICKLE_LOCS = 'locs.pickle'
 PERCENT_RESISTANT = .2
 DEBUG = False
 
@@ -69,6 +70,7 @@ def identify_variant_location(raw):
         locs[raw_id] = (tup[0], tup[1] + int(K / 2))
     
     val = kmer[int(K / 2)] # extract the base that will be changed to create the SNP
+    dump_locs(locs)
     return locs, val
 
 # Adds a SNP to a random sample of genomes.
@@ -94,6 +96,11 @@ def dump_sims(sims):
     printd('Dumping sims data...')
     with open(PICKLE_SIM, 'wb') as f:
         pickle.dump(sims, f)
+
+def dump_locs(locs):
+    printd('Dumping SNP location data...')
+    with open(PICKLE_LOCS, 'wb') as f:
+        pickle.dump(locs, f)    
 
 def create_sims():
     raw = load_raw()

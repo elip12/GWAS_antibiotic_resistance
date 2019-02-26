@@ -2,113 +2,101 @@
 # simulates a GWAS on microbial data
 
 import pickle
-from collections import OrderedDict
+import argparse
 
-class Analyzer:
+PICKLE_RAW = 'sim.pickle' #'raw.pickle'
+PICKLE_KMERS = 'kmers.pickle'
+PICKLE_SEQS = 'seqs.pickle'
+DEBUG = False
 
-    def __init__(self, threads, k, num_samples, gene_pool_file):
-        self.THREADS = threads
-        self.K = k
-        self.NUM_SAMPLES = num_samples
-        self.gene_pool_file = gene_pool_file
+def printd(*args):
+    if DEBUG == True:
+        print(*args)
 
-    # for reusability
-    def load(self, filename):
-        with open(filename, 'rb') as f:
-            raw = pickle.load(f)
-        return raw
+# load the gene pool file
+def load_raw():
+    printd('Loading data...')
+    with open(PICKLE_RAW, 'rb') as f:
+        raw = pickle.load(f)
+    return raw
 
-    # load the gene pool file
-    def load_pool(self):
-        print('Initializing gene pool...')
-        return self.load(self.gene_pool_file)
+# 1. Creates a dict of all kmers in the gene pool, associated with the genomes that
+#    have that kmer
+# 2. Identifies kmers associated with antibiotic resistance by correlating the
+#    known resistance of a genome to that genome having a particular kmer
+# 3. Coalesces adjacent kmers into a longer sequence of nucleotides containing
+#    a SNP or gene
+# 4. Returns a dictionary with kmer strings as keys and lists of genome ids as values
+def find_seqs(raw):
 
-    # there will be a bunch of kmers frame shifted 1 base from each other, all centered around
-    # a single gene or SNP. This coalesces those kmers into a single sequence containing a gene or SNP.
-    # Note: this only works if `for key in dict` returns the keys in the order in which they were added.
-    def remove_duplicates(self, kmers):
-        new_resistant_kmers = {}
-        temp = {}
-        i = 0
+    K = 30
+    kmers = {}
+    resistant_kmers = {}
+    num_samples = len(raw)
+    count = 1
+    printd('Creating kmer database...')
+    for raw_id, raw_dict in raw.items():
+        seq = raw_dict['seq']
+        for c_id, contig in enumerate(seq):
+            l = len(contig)
+            if l >= K: # ensure this contig is long enough to sample
+                for i in range(l - K + 1):
+                    kmer = contig[i:i + K] # sample the kmer itself
+                    # store the id, contig number, and string index
+                    if kmer in kmers:
+                        kmers[kmer][raw_id] = (c_id, i)
+                    else:
+                        kmers[kmer] = {raw_id: (c_id, i)}
+        print('Processed genome', count)
+        count += 1
+        if count > 2: break
+    print(len(kmers))
+    print(kmers['ATTTATCCAGATCCTTCAGCGAGCGGAGCC'])
+    return 1
 
-        prev_kmer = 'initial'
-
-        for kmer in kmers: # assumes sorted
-            if prev_kmer[1:] != kmer[:-1]: # if this is a totally new kmer
-                i += 1
-                temp[i] = (kmer, kmers[kmer])
-            else: # if this is a previous kmer frame shifted 1
-                temp[i] = (temp[i][0] + kmer[-1], temp[i][1])
-            prev_kmer = kmer
-
-        for k in temp:
-            new_resistant_kmers[temp[k][0]] = temp[k][1]
-
-        return new_resistant_kmers
-
-
-    # 1. Creates a dict of all kmers in the gene pool, associated with the genomes that
-    #    have that kmer
-    # 2. Identifies kmers associated with antibiotic resistance by correlating the
-    #    known resistance of a genome to that genome having a particular kmer
-    # 3. Coalesces adjacent kmers into a longer sequence of nucleotides containing
-    #    a SNP or gene
-    # 4. Returns a dictionary with kmer strings as keys and lists of genome ids as values
-    def find_seqs(self, variants, filename=''):
-        kmers = OrderedDict()
-        resistant_kmers = {}
-
-        print('\nCreating kmer database...')
-        for v_id, variant in variants.items():
-            for i in range(len(variant.sequence) - self.K + 1):
-                kmer = variant.sequence[i:i + self.K]
-                if kmer in kmers:
-                    kmers[kmer].append(v_id)
-                else:
-                    kmers[kmer] = [v_id]
-
-        # consider parallelizing this
-        print('\nIdentifying resistant kmers...')
-        for kmer in kmers:
-            num_resistant = 0
-            for v_id in kmers[kmer]:
-                if variants[v_id].resistance == 1:
-                    num_resistant += 1
-            p_resistant = num_resistant / len(kmers[kmer])
-            if p_resistant > 0.95 and num_resistant / self.NUM_SAMPLES >= .01:
-                resistant_kmers[kmer] = kmers[kmer]
+    printd('Identifying resistant kmers...')
+    for kmer, kmer_dict in kmers.items():
         
-        print('\nConsolidating adjacent kmers...')
-        resistant_kmers = self.remove_duplicates(resistant_kmers)
+        # if this kmer is present in >99% or <1% of samples, ignore it
+        p_kmer = len(kmer_dict) / num_samples
+        if p_kmer > .99 or p_kmer < .01:
+            break
 
-        print(f'\n{len(resistant_kmers)} resistant sequences detected')
-        if filename:
-            print(f'\nDumping sequences to {filename}...')
-            with open(filename, 'wb') as dump_file:
-                pickle.dump(resistant_kmers, dump_file)
-        return resistant_kmers
+        # if <95% of the samples that have this kmer are resistant, ignore it
+        num_resistant = 0
+        for raw_id, loc  in kmer_dict.items():
+            if raw[raw_id]['resistance'] == 1:
+                num_resistant += 1
+        p_resistant = num_resistant / len(kmer_dict)
+        if p_resistant > 0.95:
+            resistant_kmers[kmer] = kmers[kmer]
+    
+    # print('Consolidating adjacent kmers...')
+    # resistant_kmers = self.remove_duplicates(resistant_kmers)
 
-    def evaluate_accuracy(self, seqs, raw):
-        variants = raw['variants']
-        meta = raw['meta']
-        gene_size = meta['GENOME_SIZE'] / 1000
-
-        identified_genes = {gene: seqs[gene] for gene in seqs if len(gene) > 0.5 * gene_size}
-        beneficial_gene = meta['genes'][0] # hacky but i dont want to make new data rn
-        # print('\nBeneficial gene:\n', beneficial_gene)
-
-        # print('\nIdentified genes:\n')
-        for gene in identified_genes:
-            if len(gene) > len(beneficial_gene):
-                if beneficial_gene in gene:
-                    print('Beneficial gene recognized!')
-            else:
-                if gene in beneficial_gene:
-                    print('Beneficial gene recognized!')
-
-        
+    printd(f'{len(resistant_kmers)} resistant sequences detected')
+    return resistant_kmers
 
 
-        
+def dump_seqs(seqs):
+    printd('Dumping seqs data...')
+    with open(PICKLE_SEQS, 'wb') as f:
+        pickle.dump(seqs, f)
+
+def run_gwas():
+    raw = load_raw()
+    seqs = find_seqs(raw)
+    #dump_seqs(seqs)
+    printd('Done.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Runs GWAS on microbial genomes')
+    parser.add_argument('-d', action='store_true',
+        help='turn on debug mode')
+    args = parser.parse_args()
+    DEBUG = args.d
+    
+    run_gwas()
+
 
 
