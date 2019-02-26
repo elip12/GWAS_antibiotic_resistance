@@ -28,10 +28,10 @@ def instantiate_pool(filename):
 
 if __name__ == '__main__':
 
-    # instantiate_pool(PICKLE_FILE)
+    instantiate_pool(PICKLE_FILE)
 
-    analyzer = Analyzer(THREADS, K, NUM_SAMPLES, PICKLE_FILE)
-    raw = analyzer.load_pool()
+    #analyzer = Analyzer(THREADS, K, NUM_SAMPLES, PICKLE_FILE)
+    #raw = analyzer.load_pool()
     #seqs = analyzer.find_seqs(raw['variants'], SEQS_FILE)
-    seqs = analyzer.load(SEQS_FILE)
-    analyzer.evaluate_accuracy(seqs, raw)
+    #seqs = analyzer.load(SEQS_FILE)
+    #analyzer.evaluate_accuracy(seqs, raw)
