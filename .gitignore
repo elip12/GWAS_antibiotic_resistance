@@ -1,5 +1,6 @@
 *.out
 v_gwas
-*.pickle
+*.pickle*
 __pycache__
 .DS_Store
+*.zip
