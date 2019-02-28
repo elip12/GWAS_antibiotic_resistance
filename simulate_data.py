@@ -5,9 +5,9 @@ import random
 import pickle
 import argparse
 
-PICKLE_RAW = 'raw.pickle'
-PICKLE_SIM = 'sim.pickle'
-PICKLE_LOCS = 'locs.pickle'
+PICKLE_RAW = 'pickle/raw.pickle'
+PICKLE_SIM = 'pickle/sim.pickle'
+PICKLE_LOCS = 'pickle/locs.pickle'
 PERCENT_RESISTANT = .2
 DEBUG = False
 
