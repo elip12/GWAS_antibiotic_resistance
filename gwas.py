@@ -1,8 +1,18 @@
 # Eli Pandolfo
 # simulates a GWAS on microbial data
 
+'''
+The kmer dict gets too large to store in memory. We need to break it up into chunks of ~8gb,
+pickle those chunks, and write them to disc. Then, when identifying the resistant k-mers,
+we read one chunk at a time, we extract a single kmer's info from each one, and do the
+association test (X^2 test) once we get all the info for a single kmer.
+
+maybe worth using a real database?
+'''
+
 import pickle
 import argparse
+import psycopg2
 
 PICKLE_RAW = 'sim.pickle' #'raw.pickle'
 PICKLE_KMERS = 'kmers.pickle'
@@ -20,6 +30,18 @@ def load_raw():
         raw = pickle.load(f)
     return raw
 
+def upsert_kmer(conn, kmer_seq, sample_id, contig, index):
+    cur = conn.cursor()
+
+    cur.execute('''
+        INSERT INTO kmer (kmer_seq, sample_id, contig, index)
+        VALUES (%s, %s, %s, %s)
+        ''',
+        (kmer_seq, sample_id, contig, index))
+    
+    conn.commit()
+    cur.close()
+
 # 1. Creates a dict of all kmers in the gene pool, associated with the genomes that
 #    have that kmer
 # 2. Identifies kmers associated with antibiotic resistance by correlating the
@@ -27,7 +49,7 @@ def load_raw():
 # 3. Coalesces adjacent kmers into a longer sequence of nucleotides containing
 #    a SNP or gene
 # 4. Returns a dictionary with kmer strings as keys and lists of genome ids as values
-def find_seqs(raw):
+def find_seqs(raw, conn):
 
     K = 30
     kmers = {}
@@ -42,16 +64,21 @@ def find_seqs(raw):
             if l >= K: # ensure this contig is long enough to sample
                 for i in range(l - K + 1):
                     kmer = contig[i:i + K] # sample the kmer itself
+                    
+                    upsert_kmer(conn, kmer, raw_id, c_id, i)
+
                     # store the id, contig number, and string index
                     if kmer in kmers:
                         kmers[kmer][raw_id] = (c_id, i)
                     else:
                         kmers[kmer] = {raw_id: (c_id, i)}
+        
+
+
         print('Processed genome', count)
         count += 1
         if count > 2: break
     print(len(kmers))
-    print(kmers['ATTTATCCAGATCCTTCAGCGAGCGGAGCC'])
     return 1
 
     printd('Identifying resistant kmers...')
@@ -85,7 +112,11 @@ def dump_seqs(seqs):
 
 def run_gwas():
     raw = load_raw()
-    seqs = find_seqs(raw)
+
+    # need to be created AFTER THE FORK
+    conn = psycopg2.connect('dbname=kmer user=localuser')
+    
+    seqs = find_seqs(raw, conn)
     #dump_seqs(seqs)
     printd('Done.')
 
@@ -95,7 +126,7 @@ if __name__ == '__main__':
         help='turn on debug mode')
     args = parser.parse_args()
     DEBUG = args.d
-    
+
     run_gwas()
 
 
