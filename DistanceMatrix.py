@@ -26,24 +26,23 @@ def diff(s1, s2):
     return previous_row[-1]
 
 def distanceMatrix(kmerDict):
-	KmerOfOneSize = {}
+	#KmerOfOneSize = {}
 	#list of the 1 percents
 	#print len(kmerDict) #checks len of kmer TEST
 	#onePercent = int(math.ceil(0.01*len(kmerDict))) #get 1 percent of len(kmerDict)
-	for key, value in kmerDict.items():
-		if len(key) == 13:
-			temp = {key:value}
-			KmerOfOneSize.update(temp)
+	#for key, value in kmerDict.items():
+		#temp = {key:value}
+		#KmerOfOneSize.update(temp)
 	#print(KmerOfOneSize)
-	onePercent = int(math.ceil(0.18*len(KmerOfOneSize))) #get 1 percent of len(kmerDict)
 	#print onePercent #TEST
-	p = random.sample(KmerOfOneSize.items(), onePercent)#add random 1 percent of kmerDict to a new dict for the matrix
+	onePercent = int(math.ceil(0.01*len(kmerDict))) #get 1 percent of len(kmerDict)
+	p = random.sample(kmerDict.items(), onePercent)#add random 1 percent of kmerDict to a new dict for the matrix
 	print( "Getting random sample...")
 	#print(p)
-	print(diff("AGGTDS", "AGHTDS")/6)
+	#print(diff("AGGTDS", "AGHTDS")/6)
 	x,y = zip(*p)
-	print("this is x")
-	print(x)
+	#print("this is x")
+	#print(x)
 	my_array = np.zeros(shape=((len(x),len(x))))
 	#time = time()
 	print ("Building distance matrix...")
