@@ -1,0 +1,1 @@
+psql -h localhost -p 5432 -U localuser -d kmer -f bin/drop_tables.sql

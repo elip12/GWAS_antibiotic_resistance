@@ -18,7 +18,7 @@ def pickle_input(in_dir):
             base, ext = os.path.splitext(filename)
             if ext == '.fa':
                 with open(os.path.join(dirname, filename)) as f:
-                    seqs[base] = [line for line in f if line[0] in ['A','T','C','G']]
+                    seqs[base] = [line.rstrip() for line in f if line[0] in ['A','T','C','G']]
     
     with open(PICKLE_FILE, 'wb') as pickle_file:
         pickle.dump(seqs, pickle_file)

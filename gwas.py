@@ -13,6 +13,8 @@ maybe worth using a real database?
 import pickle
 import argparse
 import psycopg2
+import psycopg2.extras
+import io
 
 PICKLE_RAW = 'sim.pickle' #'raw.pickle'
 PICKLE_KMERS = 'kmers.pickle'
@@ -30,17 +32,16 @@ def load_raw():
         raw = pickle.load(f)
     return raw
 
-def upsert_kmer(conn, kmer_seq, sample_id, contig, index):
-    cur = conn.cursor()
+def upsert_kmer(cur, data):
 
-    cur.execute('''
-        INSERT INTO kmer (kmer_seq, sample_id, contig, index)
-        VALUES (%s, %s, %s, %s)
-        ''',
-        (kmer_seq, sample_id, contig, index))
-    
-    conn.commit()
-    cur.close()
+    query = '''
+        INSERT INTO kmer (seq, sample_id, contig, index)
+        VALUES %s
+        '''
+    printd('Inserting to DB...')
+    psycopg2.extras.execute_values (
+        cur, query, data, template=None, page_size=100)
+    printd('Insertion complete.')
 
 # 1. Creates a dict of all kmers in the gene pool, associated with the genomes that
 #    have that kmer
@@ -57,27 +58,37 @@ def find_seqs(raw, conn):
     num_samples = len(raw)
     count = 1
     printd('Creating kmer database...')
+    cur = conn.cursor()
     for raw_id, raw_dict in raw.items():
+        
+        data = []
         seq = raw_dict['seq']
         for c_id, contig in enumerate(seq):
             l = len(contig)
             if l >= K: # ensure this contig is long enough to sample
                 for i in range(l - K + 1):
                     kmer = contig[i:i + K] # sample the kmer itself
-                    
-                    upsert_kmer(conn, kmer, raw_id, c_id, i)
+                    data.append((kmer, str(raw_id), str(c_id), str(i)))
 
                     # store the id, contig number, and string index
-                    if kmer in kmers:
-                        kmers[kmer][raw_id] = (c_id, i)
-                    else:
-                        kmers[kmer] = {raw_id: (c_id, i)}
-        
+                    # if kmer in kmers:
+                    #     kmers[kmer][raw_id] = (c_id, i)
+                    # else:
+                    #     kmers[kmer] = {raw_id: (c_id, i)}
+        print('created list')
+        data = io.StringIO('\n'.join(['\t'.join(tup) for tup in data]))
+        print('created string')
+        #print(data.readlines())
+        cur.copy_from(data, 'kmer')
+        #upsert_kmer(cur, data)
+        conn.commit()
 
 
         print('Processed genome', count)
         count += 1
-        if count > 2: break
+        if count > 1: break
+    cur.close()
+
     print(len(kmers))
     return 1
 
@@ -117,6 +128,7 @@ def run_gwas():
     conn = psycopg2.connect('dbname=kmer user=localuser')
     
     seqs = find_seqs(raw, conn)
+    conn.close()
     #dump_seqs(seqs)
     printd('Done.')
 
