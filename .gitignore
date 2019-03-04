@@ -1,4 +1,6 @@
 *.out
+output.txt
+database.txt
 v_gwas
 *.pickle*
 __pycache__

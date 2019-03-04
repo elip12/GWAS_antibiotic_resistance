@@ -12,14 +12,14 @@ maybe worth using a real database?
 
 import pickle
 import argparse
-import psycopg2
-import psycopg2.extras
 import io
+import multiprocessing as mp
 
 PICKLE_RAW = 'pickle/sim.pickle' #'pickle/raw.pickle'
-PICKLE_KMERS = 'pickle/kmers.pickle'
-PICKLE_SEQS = 'pickle/seqs.pickle'
+DSK_OUTPUT = 'output.txt'
+DATABASE_OUTPUT = 'database.txt'
 DEBUG = False
+K = 30
 
 def printd(*args):
     if DEBUG == True:
@@ -32,33 +32,92 @@ def load_raw():
         raw = pickle.load(f)
     return raw
 
-def create_database(raw, conn):
+def read_infile(infile):
+    printd('Reading DSK output...')
+    kmers = []
+    with open(infile, 'r') as f:
+        for line in f:
+            kmer = line.split(' ')[0]
+            kmers.append(kmer)
+    return kmers
 
-    K = 30
-    count = 1
-    printd('Creating kmer database...')
-    cur = conn.cursor()
+def search_for_kmer(raw, search_kmer):
+    tups = []
+    print('start')
     for raw_id, raw_dict in raw.items():
-        
-        data = []
         seq = raw_dict['seq']
         for c_id, contig in enumerate(seq):
             l = len(contig)
             if l >= K: # ensure this contig is long enough to sample
                 for i in range(l - K + 1):
-                    kmer = contig[i:i + K] # sample the kmer itself
-                    data.append(f'{kmer}\t{str(raw_id)}\t{str(c_id)}\t{str(i)}')
+                    kmer = contig[i:i + K]
+                    if kmer == search_kmer:
+                        tups.append(str((raw_id, str(c_id), str(i))))
+        print('end genome')
+    return tups
 
-        data = io.StringIO('\n'.join(data))
-        cur.copy_from(data, 'kmer')
-        conn.commit()
+def create_database(raw, infile, outfile):
+    kmers = read_infile(infile)
+    size = len(kmers)
+    mod = size / 20
+    
+    printd('Retrieving kmer locations...')
+    with open(outfile, 'w') as f:
+        for count, kmer in enumerate(kmers):
+            # if count % mod == 0:
+            #     printd(f'\t{count / size * 100}%')
+            printd(f'\tprocessing kmer: {count}')
+            val = search_for_kmer(raw, kmer)
+            s = ' '.join(val)
+            outfile.write(kmer)
+            outfile.write(s)
+            outfile.write('\n')
+
+def run_gwas():
+    raw = load_raw()
+    seqs = create_database(raw, DSK_OUTPUT, DATABASE_OUTPUT)
+    #dump_seqs(seqs)
+    printd('Done.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Runs GWAS on microbial genomes')
+    parser.add_argument('-d', action='store_true',
+        help='turn on debug mode')
+    args = parser.parse_args()
+    DEBUG = args.d
+
+    run_gwas()
 
 
-        printd('Processed genome', count)
-        count += 1
-        if count > 1: break
-    cur.close()
-    return 1
+
+
+# def create_database(raw, conn):
+
+#     K = 30
+#     count = 1
+#     printd('Creating kmer database...')
+#     cur = conn.cursor()
+#     for raw_id, raw_dict in raw.items():
+        
+#         data = []
+#         seq = raw_dict['seq']
+#         for c_id, contig in enumerate(seq):
+#             l = len(contig)
+#             if l >= K: # ensure this contig is long enough to sample
+#                 for i in range(l - K + 1):
+#                     kmer = contig[i:i + K] # sample the kmer itself
+#                     data.append(f'{kmer}\t{str(raw_id)}\t{str(c_id)}\t{str(i)}')
+
+#         data = io.StringIO('\n'.join(data))
+#         cur.copy_from(data, 'kmer')
+#         conn.commit()
+
+
+#         printd('Processed genome', count)
+#         count += 1
+#         #if count > 1: break
+#     cur.close()
+#     return 1
 
 
 # def find_seqs(raw, conn):
@@ -123,32 +182,3 @@ def create_database(raw, conn):
 
     # printd(f'{len(resistant_kmers)} resistant sequences detected')
     # return resistant_kmers
-
-
-def dump_seqs(seqs):
-    printd('Dumping seqs data...')
-    with open(PICKLE_SEQS, 'wb') as f:
-        pickle.dump(seqs, f)
-
-def run_gwas():
-    raw = load_raw()
-
-    # need to be created AFTER THE FORK
-    conn = psycopg2.connect('dbname=kmer user=localuser')
-    
-    seqs = create_database(raw, conn)
-    conn.close()
-    #dump_seqs(seqs)
-    printd('Done.')
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Runs GWAS on microbial genomes')
-    parser.add_argument('-d', action='store_true',
-        help='turn on debug mode')
-    args = parser.parse_args()
-    DEBUG = args.d
-
-    run_gwas()
-
-
-
