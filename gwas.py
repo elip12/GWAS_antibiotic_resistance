@@ -34,15 +34,14 @@ def load_raw():
 
 def read_infile(infile):
     printd('Reading DSK output...')
-    kmers = []
+    kmers = {}
     with open(infile, 'r') as f:
         for line in f:
             kmer = line.split(' ')[0]
-            kmers.append(kmer)
+            kmers[kmer] = 0
     return kmers
 
-def search_for_kmer(raw, search_kmer):
-    tups = []
+def search_for_kmers(raw, kmers):
     print('start')
     for raw_id, raw_dict in raw.items():
         seq = raw_dict['seq']
@@ -51,10 +50,21 @@ def search_for_kmer(raw, search_kmer):
             if l >= K: # ensure this contig is long enough to sample
                 for i in range(l - K + 1):
                     kmer = contig[i:i + K]
-                    if kmer == search_kmer:
-                        tups.append(str((raw_id, str(c_id), str(i))))
+                    if kmer in kmers:
+                        if kmers[kmer] == 0:
+                            kmers[kmer] = [str((raw_id, str(c_id), str(i)))]
+                        else:
+                            kmers[kmer].append(str((raw_id, str(c_id), str(i))))
         print('end genome')
-    return tups
+    return kmers
+
+def write_to_outfile(outfile, kmers):
+    for kmer, val in kmers.items():
+        s = ' '.join(val)
+        outfile.write(kmer)
+        outfile.write(s)
+        outfile.write('\n')
+
 
 def create_database(raw, infile, outfile):
     kmers = read_infile(infile)
@@ -63,15 +73,19 @@ def create_database(raw, infile, outfile):
     
     printd('Retrieving kmer locations...')
     with open(outfile, 'w') as f:
+
+        kmers = take(1000, )
+
         for count, kmer in enumerate(kmers):
-            # if count % mod == 0:
-            #     printd(f'\t{count / size * 100}%')
+
             printd(f'\tprocessing kmer: {count}')
-            val = search_for_kmer(raw, kmer)
-            s = ' '.join(val)
-            outfile.write(kmer)
-            outfile.write(s)
-            outfile.write('\n')
+            kmers = search_for_kmers(raw, kmers)
+            write_to_outfile(outfile, kmers)
+
+
+
+
+
 
 def run_gwas():
     raw = load_raw()

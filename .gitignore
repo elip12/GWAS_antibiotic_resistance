@@ -1,5 +1,6 @@
 *.out
 output.txt
+input.txt
 database.txt
 v_gwas
 *.pickle*
