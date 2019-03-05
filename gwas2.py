@@ -40,7 +40,7 @@ def process(kmers):
                     kmer = contig[i:i + K]
                     if kmer in kmers:
                         kmers[kmer] += f' {raw_id},{c_id},{i}'
-        printd(f'\tProcessed genome {count}', end='\r')
+        printd(f'\tProcessed genome {count + 1}', end='\r')
     write_kmers(kmers)
     printd('Done.')
 
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     n = 0
     for chunkStart,chunkSize in chunkify('input.txt'):
         n += 1
-        if n > 1:
+        if n > 4:
             break
         printd(f'Starting chunk {n}...')
         jobs.append(pool.apply_async(process_wrapper,(chunkStart,chunkSize)))
