@@ -41,6 +41,8 @@ def process(kmers):
                     if kmer in kmers:
                         kmers[kmer] += f' {raw_id},{c_id},{i}'
         printd(f'\tProcessed genome {count + 1}', end='\r')
+    
+    kmers = {kmer:val for kmer,val in kmers.items() if (len(val.split(' ')) > 3 and len(val.split(' ')) < 351)}
     write_kmers(kmers)
     printd('Done.')
 
@@ -52,7 +54,7 @@ def process_wrapper(chunkStart, chunkSize):
         lines = f.read(chunkSize).splitlines()
         for line in lines:
             kmer = line.split(' ')[0]
-            comp = ''.join(map(complement, kmer.split()))
+            comp = ''.join(map(complement, list(kmer)))
             kmers[kmer] = ''
             kmers[comp] = ''
     process(kmers)
